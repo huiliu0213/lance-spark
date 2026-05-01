@@ -27,6 +27,7 @@ statement
     | OPTIMIZE multipartIdentifier (WITH '(' (namedArgument (',' namedArgument)*)? ')')?        #optimize
     | VACUUM multipartIdentifier (WITH '(' (namedArgument (',' namedArgument)*)? ')')?          #vacuum
     | ALTER TABLE multipartIdentifier SET UNENFORCED PRIMARY KEY '(' columnList ')'             #setUnenforcedPrimaryKey
+    | DESCRIBE HISTORY multipartIdentifier (LIMIT limit=BIGINT_LITERAL)?                       #describeHistory
     ;
 
 multipartIdentifier
@@ -70,12 +71,15 @@ ADD: 'ADD';
 ALTER: 'ALTER';
 COLUMNS: 'COLUMNS';
 CREATE: 'CREATE';
+DESCRIBE: 'DESCRIBE';
 DROP: 'DROP';
 FROM: 'FROM';
+HISTORY: 'HISTORY';
 IN: 'IN';
 INDEX: 'INDEX';
 INDEXES: 'INDEXES';
 KEY: 'KEY';
+LIMIT: 'LIMIT';
 OPTIMIZE: 'OPTIMIZE';
 PRIMARY: 'PRIMARY';
 SET: 'SET';

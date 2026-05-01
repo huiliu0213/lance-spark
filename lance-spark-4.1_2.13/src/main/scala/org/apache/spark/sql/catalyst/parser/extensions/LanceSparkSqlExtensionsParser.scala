@@ -76,12 +76,26 @@ class LanceSparkSqlExtensionsParser(delegate: ParserInterface) extends ParserInt
 
   /**
    * Parse a string to a LogicalPlan.
+   *
+   * For most commands, Spark's default parser is tried first and the custom parser
+   * is used as a fallback (on ParseException). However, DESCRIBE HISTORY must be
+   * handled specially: Spark's parser accepts "DESCRIBE HISTORY ..." as a valid
+   * "DESCRIBE TABLE" command (interpreting HISTORY as the table name), so it never
+   * throws ParseException. We detect this case and route to our custom parser first.
    */
   override def parsePlan(sqlText: String): LogicalPlan = {
-    if (sqlText.trim.toUpperCase.startsWith("CREATE INDEX")) {
+    val normalized = sqlText.trim.toUpperCase
+    if (normalized.startsWith("CREATE INDEX")) {
       throw new UnsupportedOperationException(
         "Lance does not support standard CREATE INDEX syntax. " +
           "Use: ALTER TABLE <table> CREATE INDEX <name> USING <method> (<columns>)")
+    }
+    if (normalized.startsWith("DESCRIBE HISTORY")) {
+      try {
+        return parse(sqlText)
+      } catch {
+        case _: Exception => // fall through to delegate
+      }
     }
     try {
       delegate.parsePlan(sqlText)

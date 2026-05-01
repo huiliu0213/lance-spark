@@ -2747,5 +2747,126 @@ class TestStableRowIds:
                 print(f"Failed to clean up {catalog_name}.default.test_table: {e}")
 
 
+class TestDescribeHistory:
+    """Test DESCRIBE HISTORY command for version history."""
+
+    def test_describe_history_basic(self, spark):
+        """Test DESCRIBE HISTORY returns version history."""
+        spark.sql("""
+            CREATE TABLE default.test_table (
+                id INT,
+                name STRING
+            )
+        """)
+
+        spark.sql("INSERT INTO default.test_table VALUES (1, 'alice')")
+        spark.sql("INSERT INTO default.test_table VALUES (2, 'bob')")
+
+        result = spark.sql("DESCRIBE HISTORY default.test_table").collect()
+
+        # CREATE = v1, first INSERT = v2, second INSERT = v3
+        assert len(result) >= 3, f"Expected at least 3 versions, got {len(result)}"
+
+    def test_describe_history_descending_order(self, spark):
+        """Test that results are ordered by version descending."""
+        spark.sql("""
+            CREATE TABLE default.test_table (
+                id INT,
+                name STRING
+            )
+        """)
+
+        spark.sql("INSERT INTO default.test_table VALUES (1, 'alice')")
+        spark.sql("INSERT INTO default.test_table VALUES (2, 'bob')")
+
+        result = spark.sql("DESCRIBE HISTORY default.test_table").collect()
+
+        versions = [row.version for row in result]
+        assert versions == sorted(versions, reverse=True), \
+            f"Expected descending order, got {versions}"
+
+    def test_describe_history_limit(self, spark):
+        """Test DESCRIBE HISTORY with LIMIT clause."""
+        spark.sql("""
+            CREATE TABLE default.test_table (
+                id INT,
+                name STRING
+            )
+        """)
+
+        spark.sql("INSERT INTO default.test_table VALUES (1, 'alice')")
+        spark.sql("INSERT INTO default.test_table VALUES (2, 'bob')")
+
+        result = spark.sql("DESCRIBE HISTORY default.test_table LIMIT 1").collect()
+
+        assert len(result) == 1, f"LIMIT 1 should return 1 row, got {len(result)}"
+
+        # Should be the latest version
+        all_versions = spark.sql("DESCRIBE HISTORY default.test_table").collect()
+        assert result[0].version == all_versions[0].version, \
+            "LIMIT 1 should return the latest version"
+
+    def test_describe_history_schema(self, spark):
+        """Test that DESCRIBE HISTORY returns the expected columns."""
+        spark.sql("""
+            CREATE TABLE default.test_table (
+                id INT,
+                name STRING
+            )
+        """)
+
+        result = spark.sql("DESCRIBE HISTORY default.test_table")
+
+        expected_columns = [
+            "version", "timestamp", "total_rows", "total_data_files",
+            "total_files_size", "total_fragments", "total_deletion_files"
+        ]
+        assert result.columns == expected_columns, \
+            f"Expected columns {expected_columns}, got {list(result.columns)}"
+
+    def test_describe_history_row_count(self, spark):
+        """Test that total_rows reflects table state at each version."""
+        spark.sql("""
+            CREATE TABLE default.test_table (
+                id INT,
+                name STRING
+            )
+        """)
+
+        spark.sql("INSERT INTO default.test_table VALUES (1, 'alice'), (2, 'bob')")
+        spark.sql("INSERT INTO default.test_table VALUES (3, 'charlie')")
+
+        result = spark.sql("DESCRIBE HISTORY default.test_table LIMIT 1").collect()
+
+        # Latest version should have 3 rows
+        assert result[0].total_rows == 3, \
+            f"Expected 3 total_rows in latest version, got {result[0].total_rows}"
+
+    def test_describe_history_with_time_travel(self, spark):
+        """Test that DESCRIBE HISTORY versions can be used with VERSION AS OF."""
+        spark.sql("""
+            CREATE TABLE default.test_table (
+                id INT,
+                name STRING
+            )
+        """)
+
+        spark.sql("INSERT INTO default.test_table VALUES (1, 'v1')")
+        spark.sql("INSERT INTO default.test_table VALUES (2, 'v2')")
+
+        # Get version from DESCRIBE HISTORY
+        history = spark.sql("DESCRIBE HISTORY default.test_table").collect()
+        # Second-to-last version (after first insert)
+        older_version = history[1].version
+
+        # Use that version for time travel
+        time_travel_result = spark.sql(
+            f"SELECT * FROM default.test_table VERSION AS OF {older_version}"
+        ).collect()
+
+        assert len(time_travel_result) == 1, \
+            f"Time travel to version {older_version} should return 1 row"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
